@@ -26,15 +26,19 @@ DEFAULT_MODEL = "glm-5.2:cloud"
 
 
 def load_model():
-    """Return last-used model, or DEFAULT_MODEL if no config exists."""
+    """Return last-used model.
+
+    First run (no config file) -> DEFAULT_MODEL.
+    Config file exists but empty -> None (cleared state is remembered).
+    """
     try:
         with open(CONFIG_PATH) as f:
             m = f.read().strip()
-        return m or DEFAULT_MODEL
     except FileNotFoundError:
         return DEFAULT_MODEL
     except OSError:
         return DEFAULT_MODEL
+    return m or None
 
 
 def save_model(model):
@@ -55,25 +59,25 @@ AGENTS = [
         "key": "claude",
         "name": "Claude Code",
         "desc": "ollama launch claude -- --dangerously-skip-permissions --model",
-        "build": lambda model: ["ollama", "launch", "claude",
-                                "--model", model or DEFAULT_MODEL,
-                                "--", "--dangerously-skip-permissions"],
+        "build": lambda model: ["ollama", "launch", "claude"]
+                               + (["--model", model] if model else [])
+                               + ["--", "--dangerously-skip-permissions"],
     },
     {
         "key": "droid",
         "name": "Droid",
         "desc": "ollama launch droid -- --auto high --model",
-        "build": lambda model: ["ollama", "launch", "droid",
-                                "--model", model or DEFAULT_MODEL,
-                                "--", "--auto", "high"],
+        "build": lambda model: ["ollama", "launch", "droid"]
+                               + (["--model", model] if model else [])
+                               + ["--", "--auto", "high"],
     },
     {
         "key": "pi",
         "name": "Pi",
         "desc": "ollama launch pi -- --thinking high --model",
-        "build": lambda model: ["ollama", "launch", "pi",
-                                "--model", model or DEFAULT_MODEL,
-                                "--", "--thinking", "high"],
+        "build": lambda model: ["ollama", "launch", "pi"]
+                               + (["--model", model] if model else [])
+                               + ["--", "--thinking", "high"],
     },
 ]
 
@@ -106,6 +110,8 @@ def render_menu(model):
     footer_lines = []
     if model:
         footer_lines.append(f"[bold magenta]model:[/bold magenta] [cyan]{model}[/cyan]")
+    else:
+        footer_lines.append("[bold magenta]model:[/bold magenta] [dim](cleared)[/dim]")
     footer_lines.append("[yellow]m[/yellow] select model   [yellow]q[/yellow] quit")
     footer = "\n".join(footer_lines)
 
