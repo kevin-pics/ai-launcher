@@ -58,7 +58,7 @@ AGENTS = [
     {
         "key": "claude",
         "name": "Claude Code",
-        "desc": "ollama launch claude -- --dangerously-skip-permissions --model",
+        "desc": "ollama launch claude -- --dangerously-skip-permissions [--model <m>]",
         "build": lambda model: ["ollama", "launch", "claude"]
                                + (["--model", model] if model else [])
                                + ["--", "--dangerously-skip-permissions"],
@@ -66,7 +66,7 @@ AGENTS = [
     {
         "key": "droid",
         "name": "Droid",
-        "desc": "ollama launch droid -- --auto high --model",
+        "desc": "ollama launch droid -- --auto high [--model <m>]",
         "build": lambda model: ["ollama", "launch", "droid"]
                                + (["--model", model] if model else [])
                                + ["--", "--auto", "high"],
@@ -74,7 +74,7 @@ AGENTS = [
     {
         "key": "pi",
         "name": "Pi",
-        "desc": "ollama launch pi -- --thinking high --model",
+        "desc": "ollama launch pi -- --thinking high [--model <m>]",
         "build": lambda model: ["ollama", "launch", "pi"]
                                + (["--model", model] if model else [])
                                + ["--", "--thinking", "high"],
