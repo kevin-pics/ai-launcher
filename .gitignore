@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 .launcher_model
+build/
+dist/
+*.egg-info/

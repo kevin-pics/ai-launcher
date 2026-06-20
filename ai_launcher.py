@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""launcher - unified launcher for codex / claude / droid / pi agents.
+"""ail - unified launcher for codex / claude / droid / pi agents.
 
 Usage:
-  launcher          interactive menu
-  launcher <n>      directly launch agent n (1-4), no menu
-  launcher -m       pick model first, then agent menu
+  ail            interactive menu
+  ail <n>        directly launch agent n (1-4), no menu
+  ail -m         pick model first, then agent menu
 """
 
 import os

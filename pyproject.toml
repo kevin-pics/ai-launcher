@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-launcher"
+version = "0.1.0"
+description = "Unified launcher for codex / claude / droid / pi AI agents via ollama."
+requires-python = ">=3.8"
+dependencies = ["rich>=13"]
+
+[project.scripts]
+ail = "ai_launcher:main"
+
+[tool.setuptools]
+py-modules = ["ai_launcher"]
