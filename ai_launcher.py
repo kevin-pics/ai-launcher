@@ -108,16 +108,8 @@ AGENTS_DEFAULT = [
     {
         "key": "droid_direct",
         "name": "Droid",
-        "desc": "droid (directly)",
+        "desc": "droid (directly, sonnet 4.6)",
         "build": lambda model: ["droid"],
-    },
-    {
-        "key": "claude",
-        "name": "Claude Code",
-        "desc": "ollama launch claude -- --dangerously-skip-permissions [--model <m>]",
-        "build": lambda model: ["ollama", "launch", "claude"]
-                               + (["--model", model] if model else [])
-                               + ["--", "--dangerously-skip-permissions"],
     },
     {
         "key": "droid",
@@ -126,6 +118,14 @@ AGENTS_DEFAULT = [
         "build": lambda model: ["ollama", "launch", "droid"]
                                + (["--model", model] if model else [])
                                + ["--", "--auto", "high"],
+    },
+    {
+        "key": "claude",
+        "name": "Claude Code",
+        "desc": "ollama launch claude -- --dangerously-skip-permissions [--model <m>]",
+        "build": lambda model: ["ollama", "launch", "claude"]
+                               + (["--model", model] if model else [])
+                               + ["--", "--dangerously-skip-permissions"],
     },
     {
         "key": "pi",
@@ -226,29 +226,29 @@ def render_menu(model, selected_dir):
     table = Table(show_header=True, header_style="bold cyan", box=None,
                   padding=(0, 1))
     table.add_column("#", style="bold yellow", justify="right", width=3)
-    table.add_column("Agent", style="bold green", width=14)
+    table.add_column("Agent", style="bold green", no_wrap=True)
     table.add_column("Command", style="dim")
     for i, a in enumerate(AGENTS, 1):
         table.add_row(str(i), a["name"], a["desc"])
 
     footer = Text()
-    if model:
-        footer.append("model: ", style="bold magenta")
-        footer.append(model, style="cyan")
-    else:
-        footer.append("model: ", style="bold magenta")
-        footer.append("(cleared)", style="dim")
-    footer.append("\n")
     footer.append("dir: ", style="bold magenta")
     footer.append(selected_dir, style="cyan")
+    footer.append("\n")
+    if model:
+        footer.append("ollama model: ", style="bold magenta")
+        footer.append(model, style="cyan")
+    else:
+        footer.append("ollama model: ", style="bold magenta")
+        footer.append("(cleared)", style="dim")
 
     console.print(Panel(
         Group(table, Text(""), footer),
         title="[bold blue]AI Agent Launcher[/bold blue]",
         border_style="blue",
         subtitle=(
-            "[yellow]m[/yellow] select model   "
             "[yellow]r[/yellow] recent dirs   "
+            "[yellow]m[/yellow] select ollama model   "
             "[yellow]q[/yellow] quit"
         ),
         subtitle_align="left",
@@ -389,6 +389,21 @@ def pick_directory(current):
         console.print(f"[red]  not a directory: {choice}[/red]")
 
 
+FACTORY_SETTINGS_PATH = os.path.expanduser("~/.factory/settings.json")
+
+
+def set_factory_session_model(model_id):
+    try:
+        with open(FACTORY_SETTINGS_PATH) as f:
+            data = json.load(f)
+        data.setdefault("sessionDefaultSettings", {})["model"] = model_id
+        with open(FACTORY_SETTINGS_PATH, "w") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+    except (OSError, ValueError):
+        pass
+
+
 def launch(agent_idx, model, directory):
     agent = AGENTS[agent_idx]
     cmd = agent["build"](model)
@@ -396,7 +411,10 @@ def launch(agent_idx, model, directory):
     if not os.path.isdir(directory):
         console.print(f"[red]Error: directory not found: {directory}[/red]")
         sys.exit(1)
+    if agent["key"] == "droid_direct":
+        set_factory_session_model("claude-sonnet-4-6")
     remember_recent(directory)
+    console.print(f"\n[bold green]Launching {agent['name']} ...[/bold green]")
     try:
         os.chdir(directory)
         os.execvp(cmd[0], cmd)
