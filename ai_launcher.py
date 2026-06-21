@@ -5,8 +5,10 @@ Usage:
   ail            interactive menu
   ail <n>        directly launch agent n (1-4), no menu
   ail -m         pick model first, then agent menu
+  ail --reset-agents    overwrite agents config with defaults
 """
 
+import json
 import os
 import sys
 import shutil
@@ -23,6 +25,7 @@ console = Console()
 
 CONFIG_PATH = os.path.expanduser("~/.launcher_model")
 RECENTS_PATH = os.path.expanduser("~/.launcher_recents")
+AGENTS_CONFIG_PATH = os.path.expanduser("~/.launcher_agents.json")
 DEFAULT_MODEL = "glm-5.2:cloud"
 MAX_RECENTS = 5
 
@@ -96,7 +99,7 @@ def remember_recent(path):
     save_recents(recents)
 
 
-AGENTS = [
+AGENTS_DEFAULT = [
     {
         "key": "codex",
         "name": "Codex",
@@ -130,6 +133,100 @@ AGENTS = [
 ]
 
 
+def build_agent(entry):
+    """Build a launcher function from a config entry.
+
+    Entry shape (one of):
+      {"cmd": ["codex"]}                                  # fixed command
+      {"cmd": ["ollama","launch","claude"],               # model injected
+       "model_flag": "--model", "args": ["--","--dangerously-skip-permissions"]}
+    """
+    cmd = list(entry.get("cmd", []))
+    model_flag = entry.get("model_flag")
+    args = list(entry.get("args", []))
+
+    def builder(model):
+        out = list(cmd)
+        if model_flag and model:
+            out += [model_flag, model]
+        out += args
+        return out
+    return builder
+
+
+def load_agents():
+    """Return agents list.
+
+    - If ~/.launcher_agents.json exists and is valid -> use it.
+    - Otherwise -> AGENTS_DEFAULT.
+    """
+    try:
+        with open(AGENTS_CONFIG_PATH) as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return list(AGENTS_DEFAULT)
+    except (OSError, ValueError):
+        return list(AGENTS_DEFAULT)
+
+    if not isinstance(data, list):
+        return list(AGENTS_DEFAULT)
+
+    agents = []
+    for entry in data:
+        if not isinstance(entry, dict) or "cmd" not in entry:
+            continue
+        key = entry.get("key") or entry.get("name", "agent").lower().replace(" ", "_")
+        name = entry.get("name", key)
+        desc = entry.get("desc", " ".join(entry.get("cmd", [])))
+        agents.append({
+            "key": key,
+            "name": name,
+            "desc": desc,
+            "build": build_agent(entry),
+        })
+    return agents or list(AGENTS_DEFAULT)
+
+
+def _default_agents_data():
+    """Return the default agents config as a list of dicts."""
+    return [
+        {
+            "key": "codex",
+            "name": "Codex",
+            "desc": "codex (directly)",
+            "cmd": ["codex"],
+        },
+        {
+            "key": "claude",
+            "name": "Claude Code",
+            "desc": "ollama launch claude -- --dangerously-skip-permissions [--model <m>]",
+            "cmd": ["ollama", "launch", "claude"],
+            "model_flag": "--model",
+            "args": ["--", "--dangerously-skip-permissions"],
+        },
+        {
+            "key": "droid",
+            "name": "Droid",
+            "desc": "ollama launch droid -- --auto high [--model <m>]",
+            "cmd": ["ollama", "launch", "droid"],
+            "model_flag": "--model",
+            "args": ["--", "--auto", "high"],
+        },
+        {
+            "key": "pi",
+            "name": "Pi",
+            "desc": "ollama launch pi -- --thinking high [--model <m>]",
+            "cmd": ["ollama", "launch", "pi"],
+            "model_flag": "--model",
+            "args": ["--", "--thinking", "high"],
+        },
+    ]
+
+
+# Loaded once at startup; can be reloaded via load_agents() if needed
+AGENTS = load_agents()
+
+
 def get_models():
     """Return list of model names from `ollama list`."""
     out = subprocess.run(
@@ -144,6 +241,44 @@ def get_models():
         if name:
             models.append(name)
     return models
+
+
+def write_default_agents_config():
+    """Write the default agents config to AGENTS_CONFIG_PATH.
+
+    Returns True on success, False on failure.
+    """
+    try:
+        with open(AGENTS_CONFIG_PATH, "w") as f:
+            json.dump(_default_agents_data(), f, indent=2, ensure_ascii=False)
+            f.write("\n")
+    except OSError as e:
+        console.print(f"[red]Cannot write {AGENTS_CONFIG_PATH}: {e}[/red]")
+        return False
+    return True
+
+
+def edit_agents_config():
+    """Open the agents config file in $EDITOR (fallback: vi).
+
+    If the file does not exist, dump the default config into it first so the
+    user has a starting point to edit.
+    """
+    if not os.path.isfile(AGENTS_CONFIG_PATH):
+        if not write_default_agents_config():
+            return
+    editor = os.environ.get("EDITOR", "vi")
+    try:
+        subprocess.call([editor, AGENTS_CONFIG_PATH])
+    except FileNotFoundError:
+        console.print(f"[red]Editor '{editor}' not found in PATH[/red]")
+        return
+    except OSError as e:
+        console.print(f"[red]Failed to launch editor: {e}[/red]")
+        return
+    # Reload agents after editing
+    global AGENTS
+    AGENTS = load_agents()
 
 
 def clear_screen():
@@ -179,6 +314,7 @@ def render_menu(model, selected_dir):
         subtitle=(
             "[yellow]m[/yellow] select model   "
             "[yellow]r[/yellow] recent dirs   "
+            "[yellow]e[/yellow] edit agents   "
             "[yellow]q[/yellow] quit"
         ),
         subtitle_align="left",
@@ -346,6 +482,10 @@ def main():
         if arg in ("-h", "--help"):
             print(__doc__)
             return
+        if arg == "--reset-agents":
+            if write_default_agents_config():
+                print(f"Wrote default agents config to {AGENTS_CONFIG_PATH}")
+            return
         if arg == "-m":
             model = pick_model(model)
             save_model(model)
@@ -375,6 +515,9 @@ def main():
             continue
         if choice == "r":
             selected_dir = pick_directory(selected_dir)
+            continue
+        if choice == "e":
+            edit_agents_config()
             continue
         if choice.isdigit() and 1 <= int(choice) <= len(AGENTS):
             launch(int(choice) - 1, model, selected_dir)

@@ -61,3 +61,39 @@ Last selected model is saved to `~/.launcher_model`. Defaults to `glm-5.2:cloud`
 Agents launch from the selected directory. If no Recent is selected, the default launch directory is the current shell directory.
 
 Recent launch directories are saved to `~/.launcher_recents`, newest first, with at most 5 entries.
+
+## Agents configuration
+
+Agents are configurable via `~/.launcher_agents.json`. If the file does not exist, the four built-in defaults (Codex, Claude Code, Droid, Pi) are used.
+
+To create a starting config, run `ail` and press `e` in the menu; the default config will be written to the file and opened in `$EDITOR` (default: `vi`).
+
+```json
+[
+  {
+    "key": "codex",
+    "name": "Codex",
+    "desc": "codex (directly)",
+    "cmd": ["codex"]
+  },
+  {
+    "key": "claude",
+    "name": "Claude Code",
+    "desc": "ollama launch claude -- --dangerously-skip-permissions [--model <m>]",
+    "cmd": ["ollama", "launch", "claude"],
+    "model_flag": "--model",
+    "args": ["--", "--dangerously-skip-permissions"]
+  }
+]
+```
+
+Fields:
+
+| Field | Required | Purpose |
+|-------|----------|---------|
+| `cmd` | yes | Base command (split into argv list). If `model_flag` is set, the model flag and value are injected right after `cmd`. |
+| `model_flag` | no | Flag used to pass the model (e.g. `--model`). When set and a model is selected, `[model_flag, model]` is appended after `cmd`. If no model is selected, the flag is omitted. |
+| `args` | no | Extra argv appended after the model injection (e.g. `["--", "--dangerously-skip-permissions"]`). |
+| `name` | no | Display name in the menu. Defaults to `key`. |
+| `key` | no | Internal identifier. Defaults to a slug of `name`. |
+| `desc` | no | Menu description column. Defaults to the joined `cmd`. |
