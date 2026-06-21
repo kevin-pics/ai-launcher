@@ -283,6 +283,10 @@ def edit_agents_config():
 
 def clear_screen():
     if sys.stdin.isatty() and sys.stdout.isatty():
+        # Full clear incl. scrollback so the view redraws cleanly even after an
+        # external full-screen program (e.g. vi) has touched the terminal.
+        sys.stdout.write("\033[3J\033[2J\033[H")
+        sys.stdout.flush()
         console.clear()
 
 
