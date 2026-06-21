@@ -5,7 +5,6 @@ Usage:
   ail            interactive menu
   ail <n>        directly launch agent n (1-4), no menu
   ail -m         pick model first, then agent menu
-  ail --reset-agents    overwrite agents config with defaults
 """
 
 import json
@@ -107,6 +106,12 @@ AGENTS_DEFAULT = [
         "build": lambda model: ["codex"],
     },
     {
+        "key": "droid_direct",
+        "name": "Droid",
+        "desc": "droid (directly)",
+        "build": lambda model: ["droid"],
+    },
+    {
         "key": "claude",
         "name": "Claude Code",
         "desc": "ollama launch claude -- --dangerously-skip-permissions [--model <m>]",
@@ -187,43 +192,7 @@ def load_agents():
     return agents or list(AGENTS_DEFAULT)
 
 
-def _default_agents_data():
-    """Return the default agents config as a list of dicts."""
-    return [
-        {
-            "key": "codex",
-            "name": "Codex",
-            "desc": "codex (directly)",
-            "cmd": ["codex"],
-        },
-        {
-            "key": "claude",
-            "name": "Claude Code",
-            "desc": "ollama launch claude -- --dangerously-skip-permissions [--model <m>]",
-            "cmd": ["ollama", "launch", "claude"],
-            "model_flag": "--model",
-            "args": ["--", "--dangerously-skip-permissions"],
-        },
-        {
-            "key": "droid",
-            "name": "Droid",
-            "desc": "ollama launch droid -- --auto high [--model <m>]",
-            "cmd": ["ollama", "launch", "droid"],
-            "model_flag": "--model",
-            "args": ["--", "--auto", "high"],
-        },
-        {
-            "key": "pi",
-            "name": "Pi",
-            "desc": "ollama launch pi -- --thinking high [--model <m>]",
-            "cmd": ["ollama", "launch", "pi"],
-            "model_flag": "--model",
-            "args": ["--", "--thinking", "high"],
-        },
-    ]
-
-
-# Loaded once at startup; can be reloaded via load_agents() if needed
+# Loaded once at startup
 AGENTS = load_agents()
 
 
@@ -241,44 +210,6 @@ def get_models():
         if name:
             models.append(name)
     return models
-
-
-def write_default_agents_config():
-    """Write the default agents config to AGENTS_CONFIG_PATH.
-
-    Returns True on success, False on failure.
-    """
-    try:
-        with open(AGENTS_CONFIG_PATH, "w") as f:
-            json.dump(_default_agents_data(), f, indent=2, ensure_ascii=False)
-            f.write("\n")
-    except OSError as e:
-        console.print(f"[red]Cannot write {AGENTS_CONFIG_PATH}: {e}[/red]")
-        return False
-    return True
-
-
-def edit_agents_config():
-    """Open the agents config file in $EDITOR (fallback: vi).
-
-    If the file does not exist, dump the default config into it first so the
-    user has a starting point to edit.
-    """
-    if not os.path.isfile(AGENTS_CONFIG_PATH):
-        if not write_default_agents_config():
-            return
-    editor = os.environ.get("EDITOR", "vi")
-    try:
-        subprocess.call([editor, AGENTS_CONFIG_PATH])
-    except FileNotFoundError:
-        console.print(f"[red]Editor '{editor}' not found in PATH[/red]")
-        return
-    except OSError as e:
-        console.print(f"[red]Failed to launch editor: {e}[/red]")
-        return
-    # Reload agents after editing
-    global AGENTS
-    AGENTS = load_agents()
 
 
 def clear_screen():
@@ -318,7 +249,6 @@ def render_menu(model, selected_dir):
         subtitle=(
             "[yellow]m[/yellow] select model   "
             "[yellow]r[/yellow] recent dirs   "
-            "[yellow]e[/yellow] edit agents   "
             "[yellow]q[/yellow] quit"
         ),
         subtitle_align="left",
@@ -486,10 +416,6 @@ def main():
         if arg in ("-h", "--help"):
             print(__doc__)
             return
-        if arg == "--reset-agents":
-            if write_default_agents_config():
-                print(f"Wrote default agents config to {AGENTS_CONFIG_PATH}")
-            return
         if arg == "-m":
             model = pick_model(model)
             save_model(model)
@@ -519,9 +445,6 @@ def main():
             continue
         if choice == "r":
             selected_dir = pick_directory(selected_dir)
-            continue
-        if choice == "e":
-            edit_agents_config()
             continue
         if choice.isdigit() and 1 <= int(choice) <= len(AGENTS):
             launch(int(choice) - 1, model, selected_dir)
