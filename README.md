@@ -35,7 +35,7 @@ ail -m         # pick model first, then show agent menu
 │                                                                              │
 │  model: glm-5.2:cloud                                                        │
 │  dir: /Users/me/project                                                      │
-╰─ m select model   r recent dir   q quit ─────────────────────────────────────╯
+╰─ m select model   r recent dirs   q quit ────────────────────────────────────╯
 ```
 
 - Press `1`-`4` to launch an agent (no Enter needed)

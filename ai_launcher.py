@@ -146,7 +146,13 @@ def get_models():
     return models
 
 
+def clear_screen():
+    if sys.stdin.isatty() and sys.stdout.isatty():
+        console.clear()
+
+
 def render_menu(model, selected_dir):
+    clear_screen()
     table = Table(show_header=True, header_style="bold cyan", box=None,
                   padding=(0, 1))
     table.add_column("#", style="bold yellow", justify="right", width=3)
@@ -172,7 +178,7 @@ def render_menu(model, selected_dir):
         border_style="blue",
         subtitle=(
             "[yellow]m[/yellow] select model   "
-            "[yellow]r[/yellow] recent dir   "
+            "[yellow]r[/yellow] recent dirs   "
             "[yellow]q[/yellow] quit"
         ),
         subtitle_align="left",
@@ -246,6 +252,7 @@ def pick_model(current=None):
     if not models:
         console.print("  [red](no models found via `ollama list`)[/red]")
         return current
+    clear_screen()
     table = Table(show_header=True, header_style="bold cyan", box=None,
                   padding=(0, 1))
     table.add_column("#", style="bold yellow", justify="right", width=3)
@@ -275,6 +282,7 @@ def pick_model(current=None):
 def pick_directory(current):
     cwd = normalize_dir(os.getcwd())
     recents = load_recents()
+    clear_screen()
     table = Table(show_header=True, header_style="bold cyan", box=None,
                   padding=(0, 1))
     table.add_column("#", style="bold yellow", justify="right", width=3)
