@@ -14,7 +14,7 @@ import subprocess
 import termios
 import tty
 
-from rich.console import Console
+from rich.console import Console, Group
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -22,7 +22,9 @@ from rich.text import Text
 console = Console()
 
 CONFIG_PATH = os.path.expanduser("~/.launcher_model")
+RECENTS_PATH = os.path.expanduser("~/.launcher_recents")
 DEFAULT_MODEL = "glm-5.2:cloud"
+MAX_RECENTS = 5
 
 
 def load_model():
@@ -47,6 +49,52 @@ def save_model(model):
             f.write(model or "")
     except OSError:
         pass
+
+
+def normalize_dir(path):
+    return os.path.abspath(os.path.expanduser(path))
+
+
+def load_recents():
+    recents = []
+    seen = set()
+    try:
+        with open(RECENTS_PATH) as f:
+            lines = f.readlines()
+    except (FileNotFoundError, OSError):
+        return recents
+    for line in lines:
+        path = line.strip()
+        if not path:
+            continue
+        path = normalize_dir(path)
+        if path in seen or not os.path.isdir(path):
+            continue
+        seen.add(path)
+        recents.append(path)
+        if len(recents) >= MAX_RECENTS:
+            break
+    return recents
+
+
+def save_recents(recents):
+    try:
+        with open(RECENTS_PATH, "w") as f:
+            f.write("\n".join(recents[:MAX_RECENTS]))
+            if recents:
+                f.write("\n")
+    except OSError:
+        pass
+
+
+def remember_recent(path):
+    path = normalize_dir(path)
+    if not os.path.isdir(path):
+        return
+    recents = [p for p in load_recents() if p != path]
+    recents.insert(0, path)
+    save_recents(recents)
+
 
 AGENTS = [
     {
@@ -98,7 +146,7 @@ def get_models():
     return models
 
 
-def render_menu(model):
+def render_menu(model, selected_dir):
     table = Table(show_header=True, header_style="bold cyan", box=None,
                   padding=(0, 1))
     table.add_column("#", style="bold yellow", justify="right", width=3)
@@ -107,19 +155,26 @@ def render_menu(model):
     for i, a in enumerate(AGENTS, 1):
         table.add_row(str(i), a["name"], a["desc"])
 
-    footer_lines = []
+    footer = Text()
     if model:
-        footer_lines.append(f"[bold magenta]model:[/bold magenta] [cyan]{model}[/cyan]")
+        footer.append("model: ", style="bold magenta")
+        footer.append(model, style="cyan")
     else:
-        footer_lines.append("[bold magenta]model:[/bold magenta] [dim](cleared)[/dim]")
-    footer_lines.append("[yellow]m[/yellow] select model   [yellow]q[/yellow] quit")
-    footer = "\n".join(footer_lines)
+        footer.append("model: ", style="bold magenta")
+        footer.append("(cleared)", style="dim")
+    footer.append("\n")
+    footer.append("dir: ", style="bold magenta")
+    footer.append(selected_dir, style="cyan")
 
     console.print(Panel(
-        table,
+        Group(table, Text(""), footer),
         title="[bold blue]AI Agent Launcher[/bold blue]",
         border_style="blue",
-        subtitle=footer,
+        subtitle=(
+            "[yellow]m[/yellow] select model   "
+            "[yellow]r[/yellow] recent dir   "
+            "[yellow]q[/yellow] quit"
+        ),
         subtitle_align="left",
         padding=(1, 2),
     ))
@@ -140,6 +195,50 @@ def read_key():
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
     return ch.lower()
+
+
+def read_line(prompt):
+    console.print(prompt, end="")
+    try:
+        return input().strip()
+    except EOFError:
+        return ""
+
+
+def read_directory_choice(prompt):
+    """Read directory choice.
+
+    In a TTY, numeric choices are accepted immediately. Path entry starts when
+    the first key is not a digit or Enter, then continues as normal line input.
+    """
+    console.print(prompt, end="")
+    if not sys.stdin.isatty():
+        try:
+            return input().strip()
+        except EOFError:
+            return ""
+
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setcbreak(fd)
+        ch = sys.stdin.read(1)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+    if ch in ("\r", "\n"):
+        print()
+        return ""
+    if ch.isdigit():
+        print(ch)
+        return ch
+
+    print(ch, end="", flush=True)
+    try:
+        rest = input()
+    except EOFError:
+        rest = ""
+    return (ch + rest).strip()
 
 
 def pick_model(current=None):
@@ -173,12 +272,58 @@ def pick_model(current=None):
         console.print("[red]  invalid choice[/red]")
 
 
-def launch(agent_idx, model):
+def pick_directory(current):
+    cwd = normalize_dir(os.getcwd())
+    recents = load_recents()
+    table = Table(show_header=True, header_style="bold cyan", box=None,
+                  padding=(0, 1))
+    table.add_column("#", style="bold yellow", justify="right", width=3)
+    table.add_column("Directory", style="green")
+    for i, path in enumerate(recents, 1):
+        style = "bold cyan" if path == current else "green"
+        marker = " *" if path == current else ""
+        table.add_row(str(i), f"{path}{marker}", style=style)
+    table.add_row("0", f"(current directory) {cwd}", style="dim")
+    console.print(Panel(
+        table,
+        title="[bold blue]Select Directory[/bold blue]",
+        border_style="blue",
+        padding=(1, 2),
+    ))
+    prompt = (
+        f"[bold]Select dir [1-{len(recents)} / 0 / path]:[/bold] "
+        if recents else
+        "[bold]Select dir [0 / path]:[/bold] "
+    )
+    while True:
+        choice = read_directory_choice(prompt)
+        if choice == "" or choice == "0":
+            remember_recent(cwd)
+            return cwd
+        if choice.isdigit() and 1 <= int(choice) <= len(recents):
+            path = recents[int(choice) - 1]
+            remember_recent(path)
+            return path
+        path = normalize_dir(choice)
+        if os.path.isdir(path):
+            remember_recent(path)
+            return path
+        console.print(f"[red]  not a directory: {choice}[/red]")
+
+
+def launch(agent_idx, model, directory):
     agent = AGENTS[agent_idx]
     cmd = agent["build"](model)
+    directory = normalize_dir(directory)
+    if not os.path.isdir(directory):
+        console.print(f"[red]Error: directory not found: {directory}[/red]")
+        sys.exit(1)
+    remember_recent(directory)
     console.print(f"\n[bold green]Launching {agent['name']} ...[/bold green]")
+    console.print(f"  [dim]dir: {directory}[/dim]")
     console.print(f"  [dim]$ {' '.join(cmd)}[/dim]")
     try:
+        os.chdir(directory)
         os.execvp(cmd[0], cmd)
     except FileNotFoundError:
         console.print(f"[red]Error: '{cmd[0]}' not found in PATH[/red]")
@@ -187,6 +332,7 @@ def launch(agent_idx, model):
 
 def main():
     model = load_model()
+    selected_dir = normalize_dir(os.getcwd())
 
     # Direct agent index from CLI arg
     if len(sys.argv) > 1:
@@ -197,21 +343,21 @@ def main():
         if arg == "-m":
             model = pick_model(model)
             save_model(model)
-            render_menu(model)
+            render_menu(model, selected_dir)
         elif arg.isdigit():
             idx = int(arg)
             if 1 <= idx <= len(AGENTS):
                 if len(sys.argv) > 2 and sys.argv[2] == "-m":
                     model = pick_model(model)
                     save_model(model)
-                launch(idx - 1, model)
+                launch(idx - 1, model, selected_dir)
                 return
             print("invalid agent index: {}".format(idx))
             return
 
     # Interactive menu loop
     while True:
-        render_menu(model)
+        render_menu(model, selected_dir)
         print("> ", end="", flush=True)
         choice = read_key()
         print()  # newline after keypress
@@ -221,8 +367,11 @@ def main():
             model = pick_model(model)
             save_model(model)
             continue
+        if choice == "r":
+            selected_dir = pick_directory(selected_dir)
+            continue
         if choice.isdigit() and 1 <= int(choice) <= len(AGENTS):
-            launch(int(choice) - 1, model)
+            launch(int(choice) - 1, model, selected_dir)
             return
         print("invalid choice, try again")
 
