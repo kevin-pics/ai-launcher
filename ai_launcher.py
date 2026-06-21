@@ -328,8 +328,6 @@ def launch(agent_idx, model, directory):
         sys.exit(1)
     remember_recent(directory)
     console.print(f"\n[bold green]Launching {agent['name']} ...[/bold green]")
-    console.print(f"  [dim]dir: {directory}[/dim]")
-    console.print(f"  [dim]$ {' '.join(cmd)}[/dim]")
     try:
         os.chdir(directory)
         os.execvp(cmd[0], cmd)
