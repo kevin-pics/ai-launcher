@@ -22,8 +22,7 @@ from rich.text import Text
 console = Console()
 
 RECENTS_PATH = os.path.expanduser("~/.launcher_recents")
-AGENTS_CONFIG_PATH = os.path.expanduser("~/.launcher_agents.json")
-MAX_RECENTS = 5
+MAX_RECENTS = 8
 
 
 def normalize_dir(path):
@@ -79,6 +78,12 @@ AGENTS_DEFAULT = [
         "build": lambda model: ["codex"],
     },
     {
+        "key": "claude",
+        "name": "Claude Code",
+        "desc": "ollama launch claude -- --dangerously-skip-permissions",
+        "build": lambda model: ["ollama", "launch", "claude", "--", "--dangerously-skip-permissions"],
+    },
+    {
         "key": "droid_direct",
         "name": "Droid",
         "desc": "droid (directly, sonnet 4.6)",
@@ -91,12 +96,6 @@ AGENTS_DEFAULT = [
         "build": lambda model: ["ollama", "launch", "droid", "--", "--auto", "high"],
     },
     {
-        "key": "claude",
-        "name": "Claude Code",
-        "desc": "ollama launch claude -- --dangerously-skip-permissions",
-        "build": lambda model: ["ollama", "launch", "claude", "--", "--dangerously-skip-permissions"],
-    },
-    {
         "key": "pi",
         "name": "Pi",
         "desc": "ollama launch pi -- --thinking high",
@@ -105,54 +104,7 @@ AGENTS_DEFAULT = [
 ]
 
 
-def build_agent(entry):
-    """Build a launcher function from a config entry.
-
-    Entry shape: {"cmd": [...], "args": [...]}
-    """
-    cmd = list(entry.get("cmd", []))
-    args = list(entry.get("args", []))
-
-    def builder(model):
-        return list(cmd) + args
-    return builder
-
-
-def load_agents():
-    """Return agents list.
-
-    - If ~/.launcher_agents.json exists and is valid -> use it.
-    - Otherwise -> AGENTS_DEFAULT.
-    """
-    try:
-        with open(AGENTS_CONFIG_PATH) as f:
-            data = json.load(f)
-    except FileNotFoundError:
-        return list(AGENTS_DEFAULT)
-    except (OSError, ValueError):
-        return list(AGENTS_DEFAULT)
-
-    if not isinstance(data, list):
-        return list(AGENTS_DEFAULT)
-
-    agents = []
-    for entry in data:
-        if not isinstance(entry, dict) or "cmd" not in entry:
-            continue
-        key = entry.get("key") or entry.get("name", "agent").lower().replace(" ", "_")
-        name = entry.get("name", key)
-        desc = entry.get("desc", " ".join(entry.get("cmd", [])))
-        agents.append({
-            "key": key,
-            "name": name,
-            "desc": desc,
-            "build": build_agent(entry),
-        })
-    return agents or list(AGENTS_DEFAULT)
-
-
-# Loaded once at startup
-AGENTS = load_agents()
+AGENTS = list(AGENTS_DEFAULT)
 
 
 def clear_screen():
@@ -256,7 +208,7 @@ def read_directory_choice(prompt):
         ch = sys.stdin.read(1)
         if ch == "\x1b":
             _drain_escape_seq(fd)
-            return ""
+            return None
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
@@ -292,6 +244,8 @@ def pick_directory(current):
         table,
         title="[bold blue]Select Directory[/bold blue]",
         border_style="blue",
+        subtitle="[yellow]esc[/yellow] back",
+        subtitle_align="left",
         padding=(1, 2),
     ))
     prompt = (
@@ -301,6 +255,8 @@ def pick_directory(current):
     )
     while True:
         choice = read_directory_choice(prompt)
+        if choice is None:
+            return None
         if choice == "":
             continue
         if choice == "0":
@@ -378,8 +334,10 @@ def main():
             continue
         if choice == "q":
             return
-        if choice in ("r", "d"):
-            selected_dir = pick_directory(selected_dir)
+        if choice == "d":
+            result = pick_directory(selected_dir)
+            if result is not None:
+                selected_dir = result
             continue
         if choice.isdigit() and 1 <= int(choice) <= len(AGENTS):
             launch(int(choice) - 1, None, selected_dir)
