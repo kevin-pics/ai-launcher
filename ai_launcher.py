@@ -247,7 +247,7 @@ def render_menu(model, selected_dir):
         title="[bold blue]AI Agent Launcher[/bold blue]",
         border_style="blue",
         subtitle=(
-            "[yellow]r[/yellow] recent dirs   "
+            "[yellow]d[/yellow] recent dirs   "
             "[yellow]m[/yellow] select ollama model   "
             "[yellow]q[/yellow] quit"
         ),
@@ -460,7 +460,7 @@ def main():
             model = pick_model(model)
             save_model(model)
             continue
-        if choice == "r":
+        if choice in ("r", "d"):
             selected_dir = pick_directory(selected_dir)
             continue
         if choice.isdigit() and 1 <= int(choice) <= len(AGENTS):
