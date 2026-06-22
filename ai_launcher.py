@@ -108,10 +108,7 @@ AGENTS_DEFAULT = [
 def build_agent(entry):
     """Build a launcher function from a config entry.
 
-    Entry shape (one of):
-      {"cmd": ["codex"]}                                  # fixed command
-      {"cmd": ["ollama","launch","claude"],               # model injected
-       "model_flag": "--model", "args": ["--","--dangerously-skip-permissions"]}
+    Entry shape: {"cmd": [...], "args": [...]}
     """
     cmd = list(entry.get("cmd", []))
     args = list(entry.get("args", []))
