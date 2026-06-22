@@ -4,7 +4,6 @@
 Usage:
   ail            interactive menu
   ail <n>        directly launch agent n (1-4), no menu
-  ail -m         pick model first, then agent menu
 """
 
 import json
@@ -12,7 +11,6 @@ import os
 import select
 import sys
 import shutil
-import subprocess
 import termios
 import tty
 
@@ -23,35 +21,9 @@ from rich.text import Text
 
 console = Console()
 
-CONFIG_PATH = os.path.expanduser("~/.launcher_model")
 RECENTS_PATH = os.path.expanduser("~/.launcher_recents")
 AGENTS_CONFIG_PATH = os.path.expanduser("~/.launcher_agents.json")
-DEFAULT_MODEL = "glm-5.2:cloud"
 MAX_RECENTS = 5
-
-
-def load_model():
-    """Return last-used model.
-
-    First run (no config file) -> DEFAULT_MODEL.
-    Config file exists but empty -> None (cleared state is remembered).
-    """
-    try:
-        with open(CONFIG_PATH) as f:
-            m = f.read().strip()
-    except FileNotFoundError:
-        return DEFAULT_MODEL
-    except OSError:
-        return DEFAULT_MODEL
-    return m or None
-
-
-def save_model(model):
-    try:
-        with open(CONFIG_PATH, "w") as f:
-            f.write(model or "")
-    except OSError:
-        pass
 
 
 def normalize_dir(path):
@@ -115,26 +87,20 @@ AGENTS_DEFAULT = [
     {
         "key": "droid",
         "name": "Droid",
-        "desc": "ollama launch droid -- --auto high [--model <m>]",
-        "build": lambda model: ["ollama", "launch", "droid"]
-                               + (["--model", model] if model else [])
-                               + ["--", "--auto", "high"],
+        "desc": "ollama launch droid -- --auto high",
+        "build": lambda model: ["ollama", "launch", "droid", "--", "--auto", "high"],
     },
     {
         "key": "claude",
         "name": "Claude Code",
-        "desc": "ollama launch claude -- --dangerously-skip-permissions [--model <m>]",
-        "build": lambda model: ["ollama", "launch", "claude"]
-                               + (["--model", model] if model else [])
-                               + ["--", "--dangerously-skip-permissions"],
+        "desc": "ollama launch claude -- --dangerously-skip-permissions",
+        "build": lambda model: ["ollama", "launch", "claude", "--", "--dangerously-skip-permissions"],
     },
     {
         "key": "pi",
         "name": "Pi",
-        "desc": "ollama launch pi -- --thinking high [--model <m>]",
-        "build": lambda model: ["ollama", "launch", "pi"]
-                               + (["--model", model] if model else [])
-                               + ["--", "--thinking", "high"],
+        "desc": "ollama launch pi -- --thinking high",
+        "build": lambda model: ["ollama", "launch", "pi", "--", "--thinking", "high"],
     },
 ]
 
@@ -148,15 +114,10 @@ def build_agent(entry):
        "model_flag": "--model", "args": ["--","--dangerously-skip-permissions"]}
     """
     cmd = list(entry.get("cmd", []))
-    model_flag = entry.get("model_flag")
     args = list(entry.get("args", []))
 
     def builder(model):
-        out = list(cmd)
-        if model_flag and model:
-            out += [model_flag, model]
-        out += args
-        return out
+        return list(cmd) + args
     return builder
 
 
@@ -197,22 +158,6 @@ def load_agents():
 AGENTS = load_agents()
 
 
-def get_models():
-    """Return list of model names from `ollama list`."""
-    out = subprocess.run(
-        ["ollama", "list"], capture_output=True, text=True, check=False
-    )
-    models = []
-    for line in out.stdout.splitlines()[1:]:
-        line = line.strip()
-        if not line:
-            continue
-        name = line.split()[0]
-        if name:
-            models.append(name)
-    return models
-
-
 def clear_screen():
     if sys.stdin.isatty() and sys.stdout.isatty():
         # Full clear incl. scrollback so the view redraws cleanly even after an
@@ -222,7 +167,7 @@ def clear_screen():
         console.clear()
 
 
-def render_menu(model, selected_dir):
+def render_menu(selected_dir):
     clear_screen()
     table = Table(show_header=True, header_style="bold cyan", box=None,
                   padding=(0, 1))
@@ -235,13 +180,6 @@ def render_menu(model, selected_dir):
     footer = Text()
     footer.append("dir: ", style="bold magenta")
     footer.append(selected_dir, style="cyan")
-    footer.append("\n")
-    if model:
-        footer.append("ollama model: ", style="bold magenta")
-        footer.append(model, style="cyan")
-    else:
-        footer.append("ollama model: ", style="bold magenta")
-        footer.append("(cleared)", style="dim")
 
     console.print(Panel(
         Group(table, Text(""), footer),
@@ -249,7 +187,6 @@ def render_menu(model, selected_dir):
         border_style="blue",
         subtitle=(
             "[yellow]d[/yellow] recent dirs   "
-            "[yellow]m[/yellow] select ollama model   "
             "[yellow]q[/yellow] quit"
         ),
         subtitle_align="left",
@@ -341,40 +278,6 @@ def read_directory_choice(prompt):
     return (ch + rest).strip()
 
 
-def pick_model(current=None):
-    models = get_models()
-    if not models:
-        console.print("  [red](no models found via `ollama list`)[/red]")
-        return current
-    clear_screen()
-    table = Table(show_header=True, header_style="bold cyan", box=None,
-                  padding=(0, 1))
-    table.add_column("#", style="bold yellow", justify="right", width=3)
-    table.add_column("Model", style="green")
-    for i, m in enumerate(models, 1):
-        style = "bold cyan" if m == current else "green"
-        marker = " *" if m == current else ""
-        table.add_row(str(i), f"{m}{marker}", style=style)
-    table.add_row("0", "(no model / clear)", style="dim")
-    console.print(Panel(
-        table,
-        title="[bold blue]Select Model[/bold blue]",
-        border_style="blue",
-        padding=(1, 2),
-    ))
-    while True:
-        console.print(f"[bold]Select model [1-{len(models)} / 0]:[/bold] ", end="")
-        choice = read_key()
-        print()
-        if choice == "":
-            continue
-        if choice == "0":
-            return None
-        if choice.isdigit() and 1 <= int(choice) <= len(models):
-            return models[int(choice) - 1]
-        console.print("[red]  invalid choice[/red]")
-
-
 def pick_directory(current):
     cwd = normalize_dir(os.getcwd())
     recents = load_recents()
@@ -452,7 +355,6 @@ def launch(agent_idx, model, directory):
 
 
 def main():
-    model = load_model()
     selected_dir = normalize_dir(os.getcwd())
 
     # Direct agent index from CLI arg
@@ -461,24 +363,17 @@ def main():
         if arg in ("-h", "--help"):
             print(__doc__)
             return
-        if arg == "-m":
-            model = pick_model(model)
-            save_model(model)
-            render_menu(model, selected_dir)
-        elif arg.isdigit():
+        if arg.isdigit():
             idx = int(arg)
             if 1 <= idx <= len(AGENTS):
-                if len(sys.argv) > 2 and sys.argv[2] == "-m":
-                    model = pick_model(model)
-                    save_model(model)
-                launch(idx - 1, model, selected_dir)
+                launch(idx - 1, None, selected_dir)
                 return
             print("invalid agent index: {}".format(idx))
             return
 
     # Interactive menu loop
     while True:
-        render_menu(model, selected_dir)
+        render_menu(selected_dir)
         print("> ", end="", flush=True)
         choice = read_key()
         print()  # newline after keypress
@@ -486,15 +381,11 @@ def main():
             continue
         if choice == "q":
             return
-        if choice == "m":
-            model = pick_model(model)
-            save_model(model)
-            continue
         if choice in ("r", "d"):
             selected_dir = pick_directory(selected_dir)
             continue
         if choice.isdigit() and 1 <= int(choice) <= len(AGENTS):
-            launch(int(choice) - 1, model, selected_dir)
+            launch(int(choice) - 1, None, selected_dir)
             return
         print("invalid choice, try again")
 
