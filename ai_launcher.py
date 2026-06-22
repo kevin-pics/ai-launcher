@@ -9,6 +9,7 @@ Usage:
 
 import json
 import os
+import select
 import sys
 import shutil
 import subprocess
@@ -256,10 +257,27 @@ def render_menu(model, selected_dir):
     ))
 
 
+def _drain_escape_seq(fd):
+    """Consume any bytes following an initial ESC within a short timeout.
+
+    Handles ANSI escape sequences produced by arrow keys, Home/End, etc.,
+    so they don't pollute subsequent reads. Must be called in cbreak mode.
+    """
+    deadline = 0.02
+    while True:
+        r, _, _ = select.select([fd], [], [], deadline)
+        if not r:
+            break
+        os.read(fd, 64)
+
+
 def read_key():
     """Read a single keystroke without waiting for Enter (cbreak mode).
 
-    Falls back to line input if stdin is not a tty.
+    Falls back to line input if stdin is not a tty. Non-numeric /
+    non-meaningful keys (arrows, Home, End, etc.) are silently dropped and
+    retried by returning an empty string, so callers that loop on read_key()
+    stay responsive.
     """
     if not sys.stdin.isatty():
         return input("> ").strip().lower()
@@ -268,6 +286,9 @@ def read_key():
     try:
         tty.setcbreak(fd)
         ch = sys.stdin.read(1)
+        if ch == "\x1b":
+            _drain_escape_seq(fd)
+            return ""
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
     return ch.lower()
@@ -299,6 +320,9 @@ def read_directory_choice(prompt):
     try:
         tty.setcbreak(fd)
         ch = sys.stdin.read(1)
+        if ch == "\x1b":
+            _drain_escape_seq(fd)
+            return ""
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
@@ -342,6 +366,8 @@ def pick_model(current=None):
         console.print(f"[bold]Select model [1-{len(models)} / 0]:[/bold] ", end="")
         choice = read_key()
         print()
+        if choice == "":
+            continue
         if choice == "0":
             return None
         if choice.isdigit() and 1 <= int(choice) <= len(models):
@@ -375,7 +401,9 @@ def pick_directory(current):
     )
     while True:
         choice = read_directory_choice(prompt)
-        if choice == "" or choice == "0":
+        if choice == "":
+            continue
+        if choice == "0":
             remember_recent(cwd)
             return cwd
         if choice.isdigit() and 1 <= int(choice) <= len(recents):
@@ -454,6 +482,8 @@ def main():
         print("> ", end="", flush=True)
         choice = read_key()
         print()  # newline after keypress
+        if choice == "":
+            continue
         if choice == "q":
             return
         if choice == "m":
