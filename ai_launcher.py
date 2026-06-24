@@ -22,7 +22,7 @@ from rich.text import Text
 console = Console()
 
 RECENTS_PATH = os.path.expanduser("~/.launcher_recents")
-MAX_RECENTS = 8
+MAX_RECENTS = 15
 
 
 def normalize_dir(path):
