@@ -188,12 +188,68 @@ def read_line(prompt):
         return ""
 
 
-def read_directory_choice(prompt):
+def highlight_match(path, query, base_style):
+    text = Text()
+    low = path.lower()
+    q = query.lower()
+    i = 0
+    while i < len(path):
+        j = low.find(q, i)
+        if j < 0:
+            text.append(path[i:], style=base_style)
+            break
+        text.append(path[i:j], style=base_style)
+        text.append(path[j:j + len(q)], style="bold yellow on grey23")
+        i = j + len(q)
+    return text
+
+
+def render_dir_picker(recents, cwd, current, query=None):
+    clear_screen()
+    table = Table(show_header=True, header_style="bold cyan", box=None,
+                  padding=(0, 1))
+    table.add_column("#", style="bold yellow", justify="right", width=3)
+    table.add_column("Directory")
+
+    if query is not None:
+        matches = [p for p in recents if query.lower() in p.lower()]
+        for i, path in enumerate(matches, 1):
+            base = "bold cyan" if path == current else "green"
+            marker = " *" if path == current else ""
+            row_text = highlight_match(path + marker, query, base)
+            table.add_row(str(i), row_text)
+        subtitle = (
+            f"[bold]search:[/bold] {query}   "
+            "[yellow]esc[/yellow] back"
+        )
+    else:
+        matches = None
+        for i, path in enumerate(recents, 1):
+            style = "bold cyan" if path == current else "green"
+            marker = " *" if path == current else ""
+            table.add_row(str(i), f"{path}{marker}", style=style)
+        table.add_row("0", f"(current directory) {cwd}", style="dim")
+        subtitle = "[yellow]esc[/yellow] back"
+
+    console.print(Panel(
+        table,
+        title="[bold blue]Select Directory[/bold blue]",
+        border_style="blue",
+        subtitle=subtitle,
+        subtitle_align="left",
+        padding=(1, 2),
+    ))
+    return matches
+
+
+def read_directory_choice(prompt, recents, cwd, current):
     """Read directory choice.
 
-    In a TTY, numeric choices are accepted immediately. Path entry starts when
-    the first key is not a digit or Enter, then continues as normal line input.
+    In a TTY, numeric choices are accepted immediately. An ASCII letter as the
+    first key enters incremental search mode: filters recents live, highlights
+    matches, digit selects from filtered list. All other characters are ignored.
     """
+    render_dir_picker(recents, cwd, current)
     console.print(prompt, end="")
     if not sys.stdin.isatty():
         try:
@@ -209,52 +265,53 @@ def read_directory_choice(prompt):
         if ch == "\x1b":
             _drain_escape_seq(fd)
             return None
+        if ch in ("\r", "\n"):
+            return ""
+        if ch.isdigit():
+            print(ch)
+            return ch
+        if not (ch.isascii() and ch.isalpha()):
+            return ""
+
+        # ASCII letter: enter incremental search mode.
+        query = ch
+        while True:
+            matches = render_dir_picker(recents, cwd, current, query=query)
+            console.print(prompt, end="")
+            c = sys.stdin.read(1)
+            if c == "\x1b":
+                _drain_escape_seq(fd)
+                return None
+            if c in ("\r", "\n"):
+                if matches:
+                    return matches[0]
+                continue
+            if c in ("\x7f", "\b"):
+                query = query[:-1]
+                if not query:
+                    return ""
+                continue
+            if c.isdigit():
+                n = int(c)
+                if 1 <= n <= len(matches):
+                    return matches[n - 1]
+                continue
+            if c.isascii() and c.isalpha():
+                query += c
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
-
-    if ch in ("\r", "\n"):
-        print()
-        return ""
-    if ch.isdigit():
-        print(ch)
-        return ch
-
-    print(ch, end="", flush=True)
-    try:
-        rest = input()
-    except EOFError:
-        rest = ""
-    return (ch + rest).strip()
 
 
 def pick_directory(current):
     cwd = normalize_dir(os.getcwd())
     recents = load_recents()
-    clear_screen()
-    table = Table(show_header=True, header_style="bold cyan", box=None,
-                  padding=(0, 1))
-    table.add_column("#", style="bold yellow", justify="right", width=3)
-    table.add_column("Directory", style="green")
-    for i, path in enumerate(recents, 1):
-        style = "bold cyan" if path == current else "green"
-        marker = " *" if path == current else ""
-        table.add_row(str(i), f"{path}{marker}", style=style)
-    table.add_row("0", f"(current directory) {cwd}", style="dim")
-    console.print(Panel(
-        table,
-        title="[bold blue]Select Directory[/bold blue]",
-        border_style="blue",
-        subtitle="[yellow]esc[/yellow] back",
-        subtitle_align="left",
-        padding=(1, 2),
-    ))
     prompt = (
-        f"[bold]Select dir [1-{len(recents)} / 0 / path]:[/bold] "
+        f"[bold]Select dir [1-{len(recents)} / 0]:[/bold] "
         if recents else
-        "[bold]Select dir [0 / path]:[/bold] "
+        "[bold]Select dir [0]:[/bold] "
     )
     while True:
-        choice = read_directory_choice(prompt)
+        choice = read_directory_choice(prompt, recents, cwd, current)
         if choice is None:
             return None
         if choice == "":
