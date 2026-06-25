@@ -4,11 +4,14 @@
 Usage:
   ail            interactive menu
   ail <n>        directly launch agent n (1-4), no menu
+  ail d|dirs     print recent directories table and exit
 """
 
 import json
 import os
+import re
 import select
+import subprocess
 import sys
 import shutil
 import termios
@@ -23,6 +26,41 @@ console = Console()
 
 RECENTS_PATH = os.path.expanduser("~/.launcher_recents")
 MAX_RECENTS = 15
+
+_GITHUB_URL_CACHE: dict[str, str] = {}
+
+
+def _to_web_url(remote: str) -> str:
+    # ssh://git@host/owner/repo[.git]
+    m = re.match(r"ssh://[^@]+@([^/]+)/(.+?)(?:\.git)?$", remote)
+    if m:
+        return f"https://{m.group(1)}/{m.group(2)}"
+    # git@host:owner/repo[.git]
+    m = re.match(r"[^@]+@([^:]+):(.+?)(?:\.git)?$", remote)
+    if m:
+        return f"https://{m.group(1)}/{m.group(2)}"
+    # https://host/owner/repo[.git]
+    m = re.match(r"(https?://[^\s]+?)(?:\.git)?$", remote)
+    if m:
+        return m.group(1)
+    return ""
+
+
+def github_url_for(path: str) -> str:
+    if path in _GITHUB_URL_CACHE:
+        return _GITHUB_URL_CACHE[path]
+    url = ""
+    try:
+        out = subprocess.run(
+            ["git", "-C", path, "remote", "get-url", "origin"],
+            capture_output=True, text=True, timeout=1.5,
+        )
+        if out.returncode == 0:
+            url = _to_web_url(out.stdout.strip())
+    except (OSError, subprocess.SubprocessError):
+        pass
+    _GITHUB_URL_CACHE[path] = url
+    return url
 
 
 def normalize_dir(path):
@@ -204,12 +242,12 @@ def highlight_match(path, query, base_style):
     return text
 
 
-def render_dir_picker(recents, cwd, current, query=None):
-    clear_screen()
+def _build_dir_table(recents, cwd, current=None, query=None):
     table = Table(show_header=True, header_style="bold cyan", box=None,
                   padding=(0, 1))
     table.add_column("#", style="bold yellow", justify="right", width=3)
     table.add_column("Directory")
+    table.add_column("Remote", style="dim blue")
 
     if query is not None:
         matches = [p for p in recents if query.lower() in p.lower()]
@@ -217,18 +255,25 @@ def render_dir_picker(recents, cwd, current, query=None):
             base = "bold cyan" if path == current else "green"
             marker = " *" if path == current else ""
             row_text = highlight_match(path + marker, query, base)
-            table.add_row(str(i), row_text)
-        subtitle = (
-            f"[bold]search:[/bold] {query}   "
-            "[yellow]esc[/yellow] back"
-        )
+            table.add_row(str(i), row_text, github_url_for(path))
+        return table, matches
+
+    for i, path in enumerate(recents, 1):
+        style = "bold cyan" if path == current else "green"
+        marker = " *" if path == current else ""
+        table.add_row(str(i), f"{path}{marker}", github_url_for(path), style=style)
+    if cwd is not None:
+        table.add_row("0", f"(current directory) {cwd}", "", style="dim")
+    return table, None
+
+
+def render_dir_picker(recents, cwd, current, query=None):
+    clear_screen()
+    table, matches = _build_dir_table(recents, cwd, current, query)
+
+    if query is not None:
+        subtitle = f"[bold]search:[/bold] {query}   [yellow]esc[/yellow] back"
     else:
-        matches = None
-        for i, path in enumerate(recents, 1):
-            style = "bold cyan" if path == current else "green"
-            marker = " *" if path == current else ""
-            table.add_row(str(i), f"{path}{marker}", style=style)
-        table.add_row("0", f"(current directory) {cwd}", style="dim")
         subtitle = "[yellow]esc[/yellow] back"
 
     console.print(Panel(
@@ -240,6 +285,18 @@ def render_dir_picker(recents, cwd, current, query=None):
         padding=(1, 2),
     ))
     return matches
+
+
+def print_dir_table():
+    recents = load_recents()
+    cwd = normalize_dir(os.getcwd())
+    table, _ = _build_dir_table(recents, cwd=None, current=None)
+    console.print(Panel(
+        table,
+        title="[bold blue]Recent Directories[/bold blue]",
+        border_style="blue",
+        padding=(1, 2),
+    ))
 
 
 def read_directory_choice(prompt, recents, cwd, current):
@@ -372,6 +429,9 @@ def main():
         arg = sys.argv[1]
         if arg in ("-h", "--help"):
             print(__doc__)
+            return
+        if arg in ("d", "dirs"):
+            print_dir_table()
             return
         if arg.isdigit():
             idx = int(arg)
