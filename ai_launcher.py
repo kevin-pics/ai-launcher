@@ -128,6 +128,12 @@ AGENTS_DEFAULT = [
         "build": lambda model: ["droid"],
     },
     {
+        "key": "droid_direct_glm",
+        "name": "Droid",
+        "desc": "droid (directly, glm-5.2)",
+        "build": lambda model: ["droid"],
+    },
+    {
         "key": "droid",
         "name": "Droid",
         "desc": "ollama launch droid -- --auto high",
@@ -411,6 +417,8 @@ def launch(agent_idx, model, directory):
         sys.exit(1)
     if agent["key"] == "droid_direct":
         set_factory_session_model("claude-sonnet-4-6")
+    if agent["key"] == "droid_direct_glm":
+        set_factory_session_model("glm-5.2")
     remember_recent(directory)
     console.print(f"\n[bold green]Launching {agent['name']} ...[/bold green]")
     try:

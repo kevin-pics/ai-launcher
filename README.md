@@ -7,9 +7,7 @@ Single-key interactive menu, model switching from `ollama list`, remembers last-
 ## Install
 
 ```bash
-# recommended (manages its own venv)
-brew install pipx && pipx ensurepath
-pipx install git+https://github.com/kevin-pics/ai-launcher.git
+pip3 install git+https://github.com/kevin-pics/ai-launcher.git
 ```
 
 Requires `ollama` and the agent CLIs (`codex`, `claude`, `droid`, `pi`) on your PATH.
